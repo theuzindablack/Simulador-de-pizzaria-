@@ -1,13 +1,14 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pizzaria Tycoon: Fila Organizada</title>
+    <title>Pizzaria Tycoon - Zonas de Ação</title>
     <style>
         body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; touch-action: none; }
         #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; z-index: 10; }
-        .stat { background: rgba(0,0,0,0.9); padding: 8px 15px; border-radius: 8px; margin-bottom: 5px; border-left: 5px solid #ffeb3b; font-weight: bold; min-width: 180px; }
+        .stat { background: rgba(0,0,0,0.9); padding: 8px 15px; border-radius: 8px; margin-bottom: 5px; border-left: 5px solid #4caf50; font-weight: bold; min-width: 150px; }
         canvas { display: block; }
         #joy-base { position: absolute; width: 100px; height: 100px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; display: none; z-index: 100; pointer-events: none; }
         #joy-stick { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: rgba(255,255,255,0.5); border-radius: 50%; }
@@ -17,8 +18,7 @@
 
 <div id="ui">
     <div class="stat">💰 DINHEIRO: R$ <span id="moneyText">0</span></div>
-    <div class="stat">👷 STAFF: <span id="staffText">0</span></div>
-    <div class="stat">🍕 NA MÃO: <span id="handText">Vazio</span></div>
+    <div class="stat">🍕 PIZZAS: <span id="handText">0</span></div>
 </div>
 
 <div id="joy-base"><div id="joy-stick"></div></div>
@@ -31,40 +31,37 @@ const joyBase = document.getElementById('joy-base');
 const joyStick = document.getElementById('joy-stick');
 
 let money = 0;
-let playerHand = [];
-let staffCount = 0;
-const MAX_HAND = 6;
-
-const DELAYS = { stock: 1000, topping: 1500, oven: 2500 };
-let currentProgress = 0;
-
-let camera = { x: 0, y: 0 };
-let player = { x: 250, y: 350, r: 15, speed: 6, vx: 0, vy: 0 };
-
-const structures = {
-    pizzariaFloor: { x: 100, y: 150, w: 500, h: 400, color: '#e0e0e0' },
-    stock: { x: 120, y: 170, w: 70, h: 50, color: '#f5deb3', label: '1. MASSA' },
-    topping: { x: 250, y: 170, w: 80, h: 50, color: '#e91e63', label: '2. RECHEIO' },
-    oven: { x: 120, y: 430, w: 90, h: 90, color: '#444', label: '3. FORNO' },
-    counter: { x: 420, y: 300, w: 30, h: 100, color: '#8d6e63', label: 'BALCÃO' },
-    delivery: { x: 370, y: 300, w: 50, h: 100, color: '#3498db', label: 'ENTREGA' },
-    sidewalk: { x: 600, y: -500, w: 150, h: 2000, color: '#999' },
-    road: { x: 750, y: -500, w: 300, h: 2000, color: '#333' },
-    cltOffice: { x: 1100, y: 250, w: 200, h: 200, color: '#ffc107', label: 'CENTRO CLT' }
-};
-
-const walls = [
-    {x: 100, y: 150, w: 500, h: 15}, {x: 100, y: 150, w: 15, h: 400}, {x: 100, y: 540, w: 500, h: 15},
-    {x: 600, y: 150, w: 15, h: 150}, {x: 600, y: 400, w: 15, h: 155}
-];
-
-let customers = [];
-let staffs = [];
-let floatingTexts = [];
-let lastSpawn = 0;
+let playerHand = []; 
+let progress = 0;
 let lastAction = 0;
+let customers = [];
+let lastSpawn = 0;
+
+function toIso(x, y) {
+    return { isoX: (x - y) * 0.8, isoY: (x + y) * 0.4 };
+}
+
+let player = { x: 150, y: 150, speed: 5, vx: 0, vy: 0 };
 let joyActive = false;
 let joyOrigin = { x: 0, y: 0 };
+
+const pizzaHouse = { x: 20, y: 20, w: 320, h: 320 };
+
+// MÁQUINAS (Objetos com colisão)
+const obstacles = [
+    { x: 20, y: 20, w: 60, h: 60, color: '#f5deb3', label: 'MÁQ. MASSA', z: 25, id: 'massa' },
+    { x: 100, y: 20, w: 60, h: 60, color: '#e91e63', label: 'MÁQ. RECHEIO', z: 25, id: 'recheio' },
+    { x: 20, y: 240, w: 80, h: 80, color: '#444', label: 'FORNO', z: 35, id: 'forno' },
+    { x: 260, y: 80, w: 40, h: 160, color: '#8d6e63', label: 'BALCÃO', z: 35, id: 'counter' }
+];
+
+// AS ZONAS VERDES (Onde o jogador precisa pisar)
+const actionZones = [
+    { x: 30, y: 85, w: 40, h: 40, type: 'massa', label: 'Pise aqui' },
+    { x: 110, y: 85, w: 40, h: 40, type: 'recheio', label: 'Pise aqui' },
+    { x: 105, y: 260, w: 40, h: 40, type: 'forno', label: 'Pise aqui' },
+    { x: 220, y: 110, w: 40, h: 100, type: 'delivery', label: 'ENTREGA' }
+];
 
 // CONTROLES
 window.addEventListener('touchstart', e => {
@@ -84,134 +81,121 @@ window.addEventListener('touchmove', e => {
 });
 window.addEventListener('touchend', () => { joyActive = false; joyBase.style.display = 'none'; player.vx = 0; player.vy = 0; });
 
+function checkRectCollision(px, py, rect) {
+    return px > rect.x && px < rect.x + rect.w && py > rect.y && py < rect.y + rect.h;
+}
+
 function update() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    let nx = player.x + (joyActive ? player.vx : 0), ny = player.y + (joyActive ? player.vy : 0);
     
+    // Movimento com Colisão nos Obstáculos
+    let nextX = player.x + player.vx;
+    let nextY = player.y + player.vy;
     let canMoveX = true, canMoveY = true;
-    walls.forEach(w => {
-        if(nx+15 > w.x && nx-15 < w.x+w.w && player.y+15 > w.y && player.y-15 < w.y+w.h) canMoveX = false;
-        if(player.x+15 > w.x && player.x-15 < w.x+w.w && ny+15 > w.y && ny-15 < w.y+w.h) canMoveY = false;
+    obstacles.forEach(ob => {
+        if(checkRectCollision(nextX, player.y, ob)) canMoveX = false;
+        if(checkRectCollision(player.x, nextY, ob)) canMoveY = false;
     });
-    if(canMoveX) player.x = nx;
-    if(canMoveY) player.y = ny;
+    if(canMoveX) player.x = nextX;
+    if(canMoveY) player.y = nextY;
 
-    camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2;
+    // Limites da Casa
+    player.x = Math.max(pizzaHouse.x + 5, Math.min(pizzaHouse.x + pizzaHouse.w - 5, player.x));
+    player.y = Math.max(pizzaHouse.y + 5, Math.min(pizzaHouse.y + pizzaHouse.h - 5, player.y));
 
-    const inZone = (p, z) => p.x > z.x && p.x < z.x+z.w && p.y > z.y && p.y < z.y+z.h;
     const now = Date.now();
+    let interacting = false;
 
-    // CLT
-    if (inZone(player, structures.cltOffice) && now - lastAction > 1000 && money >= 2000) {
-        money -= 2000; staffCount++;
-        staffs.push({ x: 130 + (staffCount*25), y: 200, lastWork: now });
-        lastAction = now;
-    }
-    staffs.forEach(s => {
-        if(now - s.lastWork > 4000 && playerHand.length < MAX_HAND) { playerHand.push('massa'); s.lastWork = now; }
-    });
-
-    // Produção com Delay
-    if (inZone(player, structures.stock) && playerHand.length < MAX_HAND) {
-        currentProgress += 16.6; if (currentProgress >= DELAYS.stock) { playerHand.push('massa'); currentProgress = 0; }
-    } else if (inZone(player, structures.topping) && playerHand.includes('massa')) {
-        currentProgress += 16.6; if (currentProgress >= DELAYS.topping) { playerHand[playerHand.indexOf('massa')] = 'recheada'; currentProgress = 0; }
-    } else if (inZone(player, structures.oven) && playerHand.includes('recheada')) {
-        currentProgress += 16.6; if (currentProgress >= DELAYS.oven) { playerHand[playerHand.indexOf('recheada')] = 'assada'; currentProgress = 0; }
-    } else {
-        currentProgress = 0;
-    }
-
-    // Spawn de Clientes
-    if (customers.length < 5 && now - lastSpawn > 6000) {
-        customers.push({ x: 1000, y: 350, arrived: false, leaving: false, totalNeeded: Math.floor(Math.random()*3)+1, delivered: 0 });
-        lastSpawn = now;
-    }
-    
-    // LÓGICA DA FILA (ORGANIZAÇÃO)
-    let waitingInLine = 0;
-    customers.forEach((c) => {
-        if(c.leaving) {
-            c.x += 3.5;
-        } else {
-            // Cada cliente na fila para 60px atrás do outro
-            let targetX = 465 + (waitingInLine * 60);
-            if(c.x > targetX) {
-                c.x -= 2;
-                c.arrived = false;
-            } else {
-                c.x = targetX; // Trava na posição da fila
-                c.arrived = (waitingInLine === 0); // Só o primeiro da fila está "sendo atendido"
+    // Lógica das Zonas Verdes
+    actionZones.forEach(zone => {
+        if (checkRectCollision(player.x, player.y, zone)) {
+            if (zone.type === 'massa' && playerHand.length < 6) {
+                interacting = true; progress += 2.5;
+                if(progress >= 100) { playerHand.push('massa'); progress = 0; }
             }
-            waitingInLine++;
-        }
-    });
-    // Remove clientes que já saíram do mapa
-    customers = customers.filter(c => c.x < 1200);
-
-    // Entrega (Apenas para o primeiro da fila)
-    let target = customers.find(c => c.arrived && !c.leaving);
-    if (inZone(player, structures.delivery) && target && now - lastAction > 300) {
-        let idx = playerHand.indexOf('assada');
-        if (idx !== -1) {
-            playerHand.splice(idx, 1); target.delivered++; lastAction = now;
-            if (target.delivered >= target.totalNeeded) {
-                let gain = 1000 * target.totalNeeded; money += gain;
-                target.leaving = true; target.arrived = false;
-                floatingTexts.push({ x: target.x, y: target.y, text: `+R$ ${gain}`, alpha: 1 });
+            else if (zone.type === 'recheio' && playerHand.includes('massa')) {
+                interacting = true; progress += 2;
+                if(progress >= 100) { playerHand[playerHand.indexOf('massa')] = 'recheada'; progress = 0; }
+            }
+            else if (zone.type === 'forno' && playerHand.includes('recheada')) {
+                interacting = true; progress += 1.5;
+                if(progress >= 100) { playerHand[playerHand.indexOf('recheada')] = 'assada'; progress = 0; }
+            }
+            else if (zone.type === 'delivery') {
+                let target = customers.find(c => c.arrived && !c.leaving);
+                if(target && playerHand.includes('assada') && now - lastAction > 500) {
+                    playerHand.splice(playerHand.indexOf('assada'), 1);
+                    money += 1500; lastAction = now;
+                    target.leaving = true; target.arrived = false;
+                }
             }
         }
-    }
+    });
 
-    floatingTexts.forEach((t, i) => { t.y -= 1; t.alpha -= 0.01; if(t.alpha <= 0) floatingTexts.splice(i, 1); });
+    if(!interacting) progress = 0;
+
+    // Clientes
+    if(now - lastSpawn > 5000 && customers.length < 3) { customers.push({ x: 500, y: 160, arrived: false, leaving: false }); lastSpawn = now; }
+    customers.forEach(c => {
+        let targetX = 330; 
+        if(!c.leaving) { if(c.x > targetX) c.x -= 2; else { c.x = targetX; c.arrived = true; } }
+        else { c.x += 6; }
+    });
+    customers = customers.filter(c => c.x < 800);
+
     document.getElementById('moneyText').innerText = money;
-    document.getElementById('staffText').innerText = staffCount;
-    document.getElementById('handText').innerText = playerHand.length > 0 ? playerHand.length + " Pizzas" : "Vazio";
+    document.getElementById('handText').innerText = playerHand.length;
 }
 
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.save(); ctx.translate(-camera.x, -camera.y);
+    ctx.save();
+    const pPos = toIso(player.x, player.y);
+    ctx.translate(canvas.width/2 - pPos.isoX, canvas.height/2 - pPos.isoY);
 
-    ctx.fillStyle = "#1b5e20"; ctx.fillRect(-1000, -1000, 4000, 4000);
-    ctx.fillStyle = "#e0e0e0"; ctx.fillRect(100, 150, 500, 400);
-    ctx.fillStyle = "#999"; ctx.fillRect(600, -500, 150, 2000);
-    ctx.fillStyle = "#333"; ctx.fillRect(750, -500, 300, 2000);
+    // 1. Chão da Casa
+    ctx.fillStyle = "#ecf0f1"; ctx.beginPath();
+    let h1=toIso(pizzaHouse.x, pizzaHouse.y), h2=toIso(pizzaHouse.x+pizzaHouse.w, pizzaHouse.y),
+        h3=toIso(pizzaHouse.x+pizzaHouse.w, pizzaHouse.y+pizzaHouse.h), h4=toIso(pizzaHouse.x, pizzaHouse.y+pizzaHouse.h);
+    ctx.moveTo(h1.isoX, h1.isoY); ctx.lineTo(h2.isoX, h2.isoY); ctx.lineTo(h3.isoX, h3.isoY); ctx.lineTo(h4.isoX, h4.isoY); ctx.fill();
 
-    for (let k in structures) {
-        let s = structures[k];
-        if(s.label) {
-            ctx.fillStyle = s.color; ctx.fillRect(s.x, s.y, s.w, s.h);
-            ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.fillText(s.label, s.x, s.y-5);
-        }
-    }
-    
+    // 2. DESENHAR ZONAS VERDES (No chão)
+    actionZones.forEach(z => {
+        const z1=toIso(z.x, z.y), z2=toIso(z.x+z.w, z.y), z3=toIso(z.x+z.w, z.y+z.h), z4=toIso(z.x, z.y+z.h);
+        ctx.fillStyle = "rgba(46, 204, 113, 0.5)"; ctx.beginPath();
+        ctx.moveTo(z1.isoX, z1.isoY); ctx.lineTo(z2.isoX, z2.isoY); ctx.lineTo(z3.isoX, z3.isoY); ctx.lineTo(z4.isoX, z4.isoY); ctx.fill();
+        ctx.strokeStyle = "#27ae60"; ctx.lineWidth = 2; ctx.stroke();
+    });
+
+    // 3. DESENHAR OBSTÁCULOS (Máquinas e Balcão 3D)
+    obstacles.forEach(ob => {
+        const o1=toIso(ob.x, ob.y), o2=toIso(ob.x+ob.w, ob.y), o3=toIso(ob.x+ob.w, ob.y+ob.h), o4=toIso(ob.x, ob.y+ob.h);
+        ctx.fillStyle = "#7f8c8d"; ctx.beginPath(); // Sombra lateral
+        ctx.moveTo(o4.isoX, o4.isoY); ctx.lineTo(o3.isoX, o3.isoY); ctx.lineTo(o3.isoX, o3.isoY-ob.z); ctx.lineTo(o4.isoX, o4.isoY-ob.z); ctx.fill();
+        ctx.fillStyle = ob.color; ctx.beginPath(); // Topo
+        ctx.moveTo(o1.isoX, o1.isoY-ob.z); ctx.lineTo(o2.isoX, o2.isoY-ob.z); ctx.lineTo(o3.isoX, o3.isoY-ob.z); ctx.lineTo(o4.isoX, o4.isoY-ob.z); ctx.fill();
+        ctx.fillStyle = "white"; ctx.font = "bold 9px Arial"; ctx.fillText(ob.label, o1.isoX, o1.isoY-ob.z-5);
+    });
+
+    // 4. JOGADOR E PIZZAS NA MÃO
+    ctx.fillStyle = "#3498db"; ctx.beginPath(); ctx.arc(pPos.isoX, pPos.isoY - 12, 12, 0, Math.PI*2); ctx.fill();
+    playerHand.forEach((item, i) => {
+        let col = item==='assada' ? "#f39c12" : (item==='recheada' ? "#e91e63" : "#fff");
+        ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(pPos.isoX, pPos.isoY - (25 + i*5), 10, 5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    });
+
     // Barra de Progresso
-    if (currentProgress > 0) {
-        ctx.fillStyle = "black"; ctx.fillRect(player.x - 20, player.y - 40, 40, 8);
-        ctx.fillStyle = "#00ff00"; ctx.fillRect(player.x - 20, player.y - 40, (currentProgress / 2500) * 40, 8);
+    if(progress > 0) {
+        ctx.fillStyle="white"; ctx.fillRect(pPos.isoX-15, pPos.isoY-65, 30, 4);
+        ctx.fillStyle="#2ecc71"; ctx.fillRect(pPos.isoX-15, pPos.isoY-65, (progress/100)*30, 4);
     }
 
-    ctx.fillStyle = "#263238"; walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
-    staffs.forEach(s => { ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI*2); ctx.fill(); });
-    ctx.fillStyle = '#2196f3'; ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
-    
-    playerHand.forEach((tipo, i) => {
-        ctx.fillStyle = tipo === 'massa' ? "#fff" : (tipo === 'recheada' ? "#e91e63" : "#ffb74d");
-        ctx.beginPath(); ctx.ellipse(player.x+20, player.y-(i*4), 10, 5, 0, 0, Math.PI*2); ctx.fill();
-    });
-
-    // Clientes em Fila
+    // 5. CLIENTES
     customers.forEach(c => {
-        ctx.fillStyle = c.leaving ? "#4caf50" : "#ff5722";
-        ctx.beginPath(); ctx.arc(c.x, c.y, 15, 0, Math.PI*2); ctx.fill();
-        if(c.arrived && !c.leaving) {
-            ctx.fillStyle = "white"; ctx.fillRect(c.x-20, c.y-60, 40, 25);
-            ctx.fillStyle = "black"; ctx.font="bold 12px Arial"; ctx.fillText(`${c.delivered}/${c.totalNeeded}`, c.x-10, c.y-43);
-        }
+        const cPos = toIso(c.x, c.y);
+        ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(cPos.isoX, cPos.isoY - 15, 12, 0, Math.PI*2); ctx.fill();
     });
 
-    floatingTexts.forEach(t => { ctx.fillStyle = `rgba(0, 255, 0, ${t.alpha})`; ctx.font = "bold 16px Arial"; ctx.fillText(t.text, t.x, t.y); });
     ctx.restore();
     requestAnimationFrame(draw);
 }
@@ -219,5 +203,4 @@ setInterval(update, 1000/60);
 draw();
 </script>
 </body>
-  </html>
-  
+</html>
