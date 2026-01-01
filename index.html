@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pizzaria Tycoon: Fila Organizada</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; touch-action: none; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; z-index: 10; }
+        .stat { background: rgba(0,0,0,0.9); padding: 8px 15px; border-radius: 8px; margin-bottom: 5px; border-left: 5px solid #ffeb3b; font-weight: bold; min-width: 180px; }
+        canvas { display: block; }
+        #joy-base { position: absolute; width: 100px; height: 100px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; display: none; z-index: 100; pointer-events: none; }
+        #joy-stick { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: rgba(255,255,255,0.5); border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="stat">💰 DINHEIRO: R$ <span id="moneyText">0</span></div>
+    <div class="stat">👷 STAFF: <span id="staffText">0</span></div>
+    <div class="stat">🍕 NA MÃO: <span id="handText">Vazio</span></div>
+</div>
+
+<div id="joy-base"><div id="joy-stick"></div></div>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const joyBase = document.getElementById('joy-base');
+const joyStick = document.getElementById('joy-stick');
+
+let money = 0;
+let playerHand = [];
+let staffCount = 0;
+const MAX_HAND = 6;
+
+const DELAYS = { stock: 1000, topping: 1500, oven: 2500 };
+let currentProgress = 0;
+
+let camera = { x: 0, y: 0 };
+let player = { x: 250, y: 350, r: 15, speed: 6, vx: 0, vy: 0 };
+
+const structures = {
+    pizzariaFloor: { x: 100, y: 150, w: 500, h: 400, color: '#e0e0e0' },
+    stock: { x: 120, y: 170, w: 70, h: 50, color: '#f5deb3', label: '1. MASSA' },
+    topping: { x: 250, y: 170, w: 80, h: 50, color: '#e91e63', label: '2. RECHEIO' },
+    oven: { x: 120, y: 430, w: 90, h: 90, color: '#444', label: '3. FORNO' },
+    counter: { x: 420, y: 300, w: 30, h: 100, color: '#8d6e63', label: 'BALCÃO' },
+    delivery: { x: 370, y: 300, w: 50, h: 100, color: '#3498db', label: 'ENTREGA' },
+    sidewalk: { x: 600, y: -500, w: 150, h: 2000, color: '#999' },
+    road: { x: 750, y: -500, w: 300, h: 2000, color: '#333' },
+    cltOffice: { x: 1100, y: 250, w: 200, h: 200, color: '#ffc107', label: 'CENTRO CLT' }
+};
+
+const walls = [
+    {x: 100, y: 150, w: 500, h: 15}, {x: 100, y: 150, w: 15, h: 400}, {x: 100, y: 540, w: 500, h: 15},
+    {x: 600, y: 150, w: 15, h: 150}, {x: 600, y: 400, w: 15, h: 155}
+];
+
+let customers = [];
+let staffs = [];
+let floatingTexts = [];
+let lastSpawn = 0;
+let lastAction = 0;
+let joyActive = false;
+let joyOrigin = { x: 0, y: 0 };
+
+// CONTROLES
+window.addEventListener('touchstart', e => {
+    let t = e.touches[0];
+    if (t.clientX < window.innerWidth / 2) {
+        joyActive = true; joyOrigin = { x: t.clientX, y: t.clientY };
+        joyBase.style.display = 'block'; joyBase.style.left = (joyOrigin.x-50)+'px'; joyBase.style.top = (joyOrigin.y-50)+'px';
+    }
+});
+window.addEventListener('touchmove', e => {
+    if (!joyActive) return;
+    let t = e.touches[0];
+    let dx = t.clientX - joyOrigin.x, dy = t.clientY - joyOrigin.y;
+    let dist = Math.sqrt(dx*dx + dy*dy), moveX = dx/(dist||1), moveY = dy/(dist||1);
+    joyStick.style.transform = `translate(${moveX*Math.min(dist,40)}px, ${moveY*Math.min(dist,40)}px)`;
+    player.vx = moveX * player.speed; player.vy = moveY * player.speed;
+});
+window.addEventListener('touchend', () => { joyActive = false; joyBase.style.display = 'none'; player.vx = 0; player.vy = 0; });
+
+function update() {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    let nx = player.x + (joyActive ? player.vx : 0), ny = player.y + (joyActive ? player.vy : 0);
+    
+    let canMoveX = true, canMoveY = true;
+    walls.forEach(w => {
+        if(nx+15 > w.x && nx-15 < w.x+w.w && player.y+15 > w.y && player.y-15 < w.y+w.h) canMoveX = false;
+        if(player.x+15 > w.x && player.x-15 < w.x+w.w && ny+15 > w.y && ny-15 < w.y+w.h) canMoveY = false;
+    });
+    if(canMoveX) player.x = nx;
+    if(canMoveY) player.y = ny;
+
+    camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2;
+
+    const inZone = (p, z) => p.x > z.x && p.x < z.x+z.w && p.y > z.y && p.y < z.y+z.h;
+    const now = Date.now();
+
+    // CLT
+    if (inZone(player, structures.cltOffice) && now - lastAction > 1000 && money >= 2000) {
+        money -= 2000; staffCount++;
+        staffs.push({ x: 130 + (staffCount*25), y: 200, lastWork: now });
+        lastAction = now;
+    }
+    staffs.forEach(s => {
+        if(now - s.lastWork > 4000 && playerHand.length < MAX_HAND) { playerHand.push('massa'); s.lastWork = now; }
+    });
+
+    // Produção com Delay
+    if (inZone(player, structures.stock) && playerHand.length < MAX_HAND) {
+        currentProgress += 16.6; if (currentProgress >= DELAYS.stock) { playerHand.push('massa'); currentProgress = 0; }
+    } else if (inZone(player, structures.topping) && playerHand.includes('massa')) {
+        currentProgress += 16.6; if (currentProgress >= DELAYS.topping) { playerHand[playerHand.indexOf('massa')] = 'recheada'; currentProgress = 0; }
+    } else if (inZone(player, structures.oven) && playerHand.includes('recheada')) {
+        currentProgress += 16.6; if (currentProgress >= DELAYS.oven) { playerHand[playerHand.indexOf('recheada')] = 'assada'; currentProgress = 0; }
+    } else {
+        currentProgress = 0;
+    }
+
+    // Spawn de Clientes
+    if (customers.length < 5 && now - lastSpawn > 6000) {
+        customers.push({ x: 1000, y: 350, arrived: false, leaving: false, totalNeeded: Math.floor(Math.random()*3)+1, delivered: 0 });
+        lastSpawn = now;
+    }
+    
+    // LÓGICA DA FILA (ORGANIZAÇÃO)
+    let waitingInLine = 0;
+    customers.forEach((c) => {
+        if(c.leaving) {
+            c.x += 3.5;
+        } else {
+            // Cada cliente na fila para 60px atrás do outro
+            let targetX = 465 + (waitingInLine * 60);
+            if(c.x > targetX) {
+                c.x -= 2;
+                c.arrived = false;
+            } else {
+                c.x = targetX; // Trava na posição da fila
+                c.arrived = (waitingInLine === 0); // Só o primeiro da fila está "sendo atendido"
+            }
+            waitingInLine++;
+        }
+    });
+    // Remove clientes que já saíram do mapa
+    customers = customers.filter(c => c.x < 1200);
+
+    // Entrega (Apenas para o primeiro da fila)
+    let target = customers.find(c => c.arrived && !c.leaving);
+    if (inZone(player, structures.delivery) && target && now - lastAction > 300) {
+        let idx = playerHand.indexOf('assada');
+        if (idx !== -1) {
+            playerHand.splice(idx, 1); target.delivered++; lastAction = now;
+            if (target.delivered >= target.totalNeeded) {
+                let gain = 1000 * target.totalNeeded; money += gain;
+                target.leaving = true; target.arrived = false;
+                floatingTexts.push({ x: target.x, y: target.y, text: `+R$ ${gain}`, alpha: 1 });
+            }
+        }
+    }
+
+    floatingTexts.forEach((t, i) => { t.y -= 1; t.alpha -= 0.01; if(t.alpha <= 0) floatingTexts.splice(i, 1); });
+    document.getElementById('moneyText').innerText = money;
+    document.getElementById('staffText').innerText = staffCount;
+    document.getElementById('handText').innerText = playerHand.length > 0 ? playerHand.length + " Pizzas" : "Vazio";
+}
+
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.save(); ctx.translate(-camera.x, -camera.y);
+
+    ctx.fillStyle = "#1b5e20"; ctx.fillRect(-1000, -1000, 4000, 4000);
+    ctx.fillStyle = "#e0e0e0"; ctx.fillRect(100, 150, 500, 400);
+    ctx.fillStyle = "#999"; ctx.fillRect(600, -500, 150, 2000);
+    ctx.fillStyle = "#333"; ctx.fillRect(750, -500, 300, 2000);
+
+    for (let k in structures) {
+        let s = structures[k];
+        if(s.label) {
+            ctx.fillStyle = s.color; ctx.fillRect(s.x, s.y, s.w, s.h);
+            ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.fillText(s.label, s.x, s.y-5);
+        }
+    }
+    
+    // Barra de Progresso
+    if (currentProgress > 0) {
+        ctx.fillStyle = "black"; ctx.fillRect(player.x - 20, player.y - 40, 40, 8);
+        ctx.fillStyle = "#00ff00"; ctx.fillRect(player.x - 20, player.y - 40, (currentProgress / 2500) * 40, 8);
+    }
+
+    ctx.fillStyle = "#263238"; walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+    staffs.forEach(s => { ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI*2); ctx.fill(); });
+    ctx.fillStyle = '#2196f3'; ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
+    
+    playerHand.forEach((tipo, i) => {
+        ctx.fillStyle = tipo === 'massa' ? "#fff" : (tipo === 'recheada' ? "#e91e63" : "#ffb74d");
+        ctx.beginPath(); ctx.ellipse(player.x+20, player.y-(i*4), 10, 5, 0, 0, Math.PI*2); ctx.fill();
+    });
+
+    // Clientes em Fila
+    customers.forEach(c => {
+        ctx.fillStyle = c.leaving ? "#4caf50" : "#ff5722";
+        ctx.beginPath(); ctx.arc(c.x, c.y, 15, 0, Math.PI*2); ctx.fill();
+        if(c.arrived && !c.leaving) {
+            ctx.fillStyle = "white"; ctx.fillRect(c.x-20, c.y-60, 40, 25);
+            ctx.fillStyle = "black"; ctx.font="bold 12px Arial"; ctx.fillText(`${c.delivered}/${c.totalNeeded}`, c.x-10, c.y-43);
+        }
+    });
+
+    floatingTexts.forEach(t => { ctx.fillStyle = `rgba(0, 255, 0, ${t.alpha})`; ctx.font = "bold 16px Arial"; ctx.fillText(t.text, t.x, t.y); });
+    ctx.restore();
+    requestAnimationFrame(draw);
+}
+setInterval(update, 1000/60);
+draw();
+</script>
+</body>
+  </html>
+  
