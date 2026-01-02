@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pizzaria Tycoon - Pedidos dos Clientes</title>
+    <title>Pizzaria Tycoon - Velocidade por Staff</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap');
         body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: 'Poppins', sans-serif; touch-action: none; }
@@ -42,19 +42,23 @@ let zoom = 0.55;
 let customers = [];
 let workers = [];
 
+// Contador de trabalhadores por tipo para calcular velocidade
+const staffCount = { MASSA: 0, RECHEIO: 0, FORNO: 0, EMBALAR: 0, VENDEDOR: 0 };
+
 const WORKER_TYPES = {
-    MASSA: { color: '#f1c40f', target: {x: 270, y: 140}, price: 5000, label: "BOT MASSA" },
-    RECHEIO: { color: '#e74c3c', target: {x: 470, y: 140}, price: 8000, label: "BOT RECHEIO" },
-    FORNO: { color: '#e67e22', target: {x: 330, y: 460}, price: 12000, label: "BOT FORNO" },
-    EMBALAR: { color: '#9b59b6', target: {x: 530, y: 460}, price: 15000, label: "BOT EMBALO" }
+    MASSA: { color: '#f1c40f', target: {x: 270, y: 140}, price: 5000, label: "BOT MASSA", baseSpeed: 0.4 },
+    RECHEIO: { color: '#e74c3c', target: {x: 470, y: 140}, price: 8000, label: "BOT RECHEIO", baseSpeed: 0.35 },
+    FORNO: { color: '#e67e22', target: {x: 330, y: 460}, price: 12000, label: "BOT FORNO", baseSpeed: 0.25 },
+    EMBALAR: { color: '#9b59b6', target: {x: 530, y: 460}, price: 15000, label: "BOT EMBALO", baseSpeed: 0.45 },
+    VENDEDOR: { color: '#2ecc71', target: {x: 600, y: 320}, price: 20000, label: "BOT VENDEDOR", baseSpeed: 0.6 }
 };
 
 const tables = [
-    { x: 220, y: 180, w: 100, h: 70, z: 35, color: '#f5f6fa', side: '#dcdde1', label: 'MASSA', icon: '🍞' },
-    { x: 420, y: 180, w: 100, h: 70, z: 35, color: '#ecf0f1', side: '#bdc3c7', label: 'RECHEAR', icon: '🍅' },
-    { x: 220, y: 450, w: 100, h: 100, z: 50, color: '#e67e22', side: '#d35400', label: 'FORNO', icon: '🔥' },
-    { x: 420, y: 450, w: 100, h: 70, z: 35, color: '#d35400', side: '#a04000', label: 'EMBALAR', icon: '📦' },
-    { x: 640, y: 250, w: 40, h: 220, z: 40, color: '#8d6e63', side: '#5d4037', label: 'BALCÃO', icon: '🛒' }
+    { x: 220, y: 180, w: 100, h: 70, z: 35, color: '#f5f6fa', side: '#dcdde1', label: 'MASSA' },
+    { x: 420, y: 180, w: 100, h: 70, z: 35, color: '#ecf0f1', side: '#bdc3c7', label: 'RECHEAR' },
+    { x: 220, y: 450, w: 100, h: 100, z: 50, color: '#e67e22', side: '#d35400', label: 'FORNO' },
+    { x: 420, y: 450, w: 100, h: 70, z: 35, color: '#d35400', side: '#a04000', label: 'EMBALAR' },
+    { x: 640, y: 250, w: 40, h: 220, z: 40, color: '#8d6e63', side: '#5d4037', label: 'BALCÃO' }
 ];
 
 const workPads = [
@@ -69,14 +73,19 @@ const hireButtons = [
     { x: 780, y: 820, type: 'MASSA', displayPrice: "$5k" },
     { x: 880, y: 820, type: 'RECHEIO', displayPrice: "$8k" },
     { x: 980, y: 820, type: 'FORNO', displayPrice: "$12k" },
-    { x: 1080, y: 820, type: 'EMBALAR', displayPrice: "$15k" }
+    { x: 1080, y: 820, type: 'EMBALAR', displayPrice: "$15k" },
+    { x: 1180, y: 820, type: 'VENDEDOR', displayPrice: "$20k" }
 ];
 
 class Worker {
     constructor(type) {
         this.type = type;
-        this.x = 800; this.y = 800;
-        this.target = WORKER_TYPES[type].target;
+        this.x = 800 + (Math.random()*50); 
+        this.y = 800 + (Math.random()*50);
+        this.target = { 
+            x: WORKER_TYPES[type].target.x + (Math.random() * 30 - 15), 
+            y: WORKER_TYPES[type].target.y + (Math.random() * 30 - 15) 
+        };
         this.color = WORKER_TYPES[type].color;
         this.reached = false;
         this.progress = 0;
@@ -89,13 +98,27 @@ class Worker {
             if (dist < 5) this.reached = true;
             else { this.x += (dx/dist)*3; this.y += (dy/dist)*3; this.bob = Math.sin(Date.now()/150)*4; }
         } else {
-            this.progress += 0.4;
+            // VELOCIDADE AUMENTA COM O NÚMERO DE STAFF DO MESMO TIPO
+            let speedMultiplier = 1 + (staffCount[this.type] * 0.2); 
+            this.progress += WORKER_TYPES[this.type].baseSpeed * speedMultiplier;
+            this.bob = Math.sin(Date.now() / (100 / speedMultiplier)) * 4;
+
             if (this.progress >= 100) {
                 this.progress = 0;
                 if (this.type === 'MASSA' && playerHand.length < 20) playerHand.push('massa');
                 if (this.type === 'RECHEIO' && playerHand.includes('massa')) playerHand[playerHand.indexOf('massa')] = 'recheada';
                 if (this.type === 'FORNO' && playerHand.includes('recheada')) playerHand[playerHand.indexOf('recheada')] = 'assada';
                 if (this.type === 'EMBALAR' && playerHand.includes('assada')) playerHand[playerHand.indexOf('assada')] = 'caixa';
+                
+                if (this.type === 'VENDEDOR' && playerHand.includes('caixa')) {
+                    let firstCust = customers.find(c => c.state === 'WAITING');
+                    if (firstCust) {
+                        playerHand.splice(playerHand.lastIndexOf('caixa'), 1);
+                        firstCust.pizzasReceived++;
+                        money += 2000;
+                        if(firstCust.pizzasReceived >= firstCust.pizzasNeeded) firstCust.state = 'LEAVING';
+                    }
+                }
             }
         }
     }
@@ -111,11 +134,11 @@ function checkCollision(nx, ny, radius) {
 }
 
 function spawnCustomer() {
-    if (customers.length < 5) {
+    if (customers.length < 6) {
         customers.push({ 
             x: 730, y: -100, state: 'ENTERING', 
             color: `hsl(${Math.random() * 360}, 60%, 50%)`,
-            pizzasNeeded: Math.floor(Math.random() * 3) + 1, // Quer 1, 2 ou 3 pizzas
+            pizzasNeeded: Math.floor(Math.random() * 3) + 1,
             pizzasReceived: 0
         });
     }
@@ -131,9 +154,13 @@ function update() {
     workers.forEach(w => w.update());
     
     customers.forEach((c, i) => {
-        let targetY = 280 + (i * 85);
+        let targetY = 280 + (i * 85); 
         if(c.state === 'ENTERING') {
-            if(c.y < targetY) c.y += 4; else c.state = 'WAITING';
+            let canMove = true;
+            if (i > 0 && Math.abs(c.y - customers[i-1].y) < 90) canMove = false;
+            if(c.y < targetY && canMove) c.y += 4; else if (c.y >= targetY) c.state = 'WAITING';
+        } else if(c.state === 'WAITING' && i > 0 && c.y > 280 + (i * 85)) {
+             c.state = 'ENTERING';
         } else if(c.state === 'LEAVING') {
             c.y += 6; if(c.y > 1000) { customers.splice(i, 1); spawnCustomer(); }
         }
@@ -143,7 +170,9 @@ function update() {
     workPads.forEach(pad => {
         let dist = Math.sqrt(Math.pow(player.x - pad.x, 2) + Math.pow(player.y - pad.y, 2));
         if(dist < 50) {
-            inZone = true; progress += 4;
+            inZone = true; 
+            // Velocidade do jogador também aumenta com os bots (opcional, aqui mantivemos base + leve bônus)
+            progress += 4;
             document.getElementById('p-cont').style.display = 'block';
             document.getElementById('progressBar').style.width = progress + '%';
             if(progress >= 100) {
@@ -157,9 +186,7 @@ function update() {
                         playerHand.splice(playerHand.lastIndexOf('caixa'), 1);
                         firstCust.pizzasReceived++;
                         money += 2000;
-                        if(firstCust.pizzasReceived >= firstCust.pizzasNeeded) {
-                            firstCust.state = 'LEAVING';
-                        }
+                        if(firstCust.pizzasReceived >= firstCust.pizzasNeeded) firstCust.state = 'LEAVING';
                     }
                 }
                 progress = 0;
@@ -169,9 +196,12 @@ function update() {
 
     hireButtons.forEach(b => {
         let dist = Math.sqrt(Math.pow(player.x - b.x, 2) + Math.pow(player.y - b.y, 2));
-        if (dist < 50 && Date.now() - lastPurchaseTime > 1000) {
+        if (dist < 50 && Date.now() - lastPurchaseTime > 800) {
             if (money >= WORKER_TYPES[b.type].price) {
-                money -= WORKER_TYPES[b.type].price; workers.push(new Worker(b.type)); lastPurchaseTime = Date.now();
+                money -= WORKER_TYPES[b.type].price; 
+                workers.push(new Worker(b.type)); 
+                staffCount[b.type]++; // INCREMENTA O CONTADOR DE VELOCIDADE
+                lastPurchaseTime = Date.now();
             }
         }
     });
@@ -220,33 +250,27 @@ function draw() {
 
     tables.forEach(t => {
         drawIsoBox(t.x, t.y, t.w, t.h, t.z, t.color, t.side);
-        let p = toIso(t.x + t.w/2, t.y + t.h/2);
-        ctx.fillStyle = "#2c3e50"; ctx.font = "bold 12px Poppins"; ctx.textAlign = "center";
-        ctx.fillText(t.icon + " " + t.label, p.x, p.y - (t.z * zoom) - 10);
     });
 
     hireButtons.forEach(b => {
         drawIsoBox(b.x-40, b.y-40, 80, 80, 0, "#2ecc71", "#27ae60", true);
         let p = toIso(b.x, b.y);
-        ctx.fillStyle = "white"; ctx.font = "bold 10px Poppins"; ctx.textAlign = "center";
-        ctx.fillText(WORKER_TYPES[b.type].label, p.x, p.y - 8);
-        ctx.fillStyle = "#f1c40f"; ctx.font = "bold 14px Poppins"; ctx.fillText(b.displayPrice, p.x, p.y + 12);
+        ctx.fillStyle = "white"; ctx.font = "bold 8px Poppins"; ctx.textAlign = "center";
+        ctx.fillText(WORKER_TYPES[b.type].label + " (" + staffCount[b.type] + ")", p.x, p.y - 8);
+        ctx.fillStyle = "#f1c40f"; ctx.font = "bold 12px Poppins"; ctx.fillText(b.displayPrice, p.x, p.y + 12);
     });
 
     customers.forEach(cust => {
         let cI = toIso(cust.x, cust.y);
         drawIsoBox(cust.x-15, cust.y-15, 30, 30, 40, cust.color, "#333");
         ctx.fillStyle = "#ffdbac"; ctx.beginPath(); ctx.arc(cI.x, cI.y - (45 * zoom), 12 * zoom, 0, Math.PI*2); ctx.fill();
-        
-        // BALÃO DE PEDIDO
-        if(cust.state === 'WAITING') {
+        if(cust.state === 'WAITING' || cust.state === 'ENTERING') {
             let remain = cust.pizzasNeeded - cust.pizzasReceived;
-            ctx.fillStyle = "white";
-            ctx.beginPath();
-            ctx.roundRect(cI.x - 25, cI.y - 85, 50, 25, 5);
-            ctx.fill();
-            ctx.fillStyle = "black"; ctx.font = "bold 12px Poppins"; ctx.textAlign = "center";
-            ctx.fillText("🍕 x" + remain, cI.x, cI.y - 68);
+            if (remain > 0) {
+                ctx.fillStyle = "white"; ctx.beginPath(); ctx.roundRect(cI.x - 25, cI.y - 85, 50, 25, 5); ctx.fill();
+                ctx.fillStyle = "black"; ctx.font = "bold 12px Poppins"; ctx.textAlign = "center";
+                ctx.fillText("🍕 x" + remain, cI.x, cI.y - 68);
+            }
         }
     });
 
@@ -272,8 +296,7 @@ function draw() {
             ctx.fillStyle = (h === 'assada') ? "#8b4513" : "#f1c40f"; 
             ctx.beginPath(); ctx.ellipse(handIso.x, drawY, 20*zoom, 10*zoom, 0, 0, Math.PI * 2); ctx.fill();
             if(h === 'recheada' || h === 'assada') {
-                ctx.fillStyle = "#e74c3c";
-                ctx.beginPath(); ctx.ellipse(handIso.x, drawY, 14*zoom, 7*zoom, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "#e74c3c"; ctx.beginPath(); ctx.ellipse(handIso.x, drawY, 14*zoom, 7*zoom, 0, 0, Math.PI * 2); ctx.fill();
             }
             stackHeight += 5;
         }
