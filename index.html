@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pizzaria Tycoon - Pizza Detail</title>
+    <title>Pizzaria Tycoon - Empilhamento Real</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap');
         body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: 'Poppins', sans-serif; touch-action: none; }
@@ -35,10 +36,12 @@ let player = { x: 400, y: 350, vx: 0, vy: 0 };
 let camPos = { x: 450, y: 350 };
 let zoom = 0.65;
 
-let customer = { active: true, x: 700, y: 350, order: 1 };
+let customer = { x: 700, y: -100, order: 1, state: 'ENTERING', targetY: 350, hasPizza: false };
+
 function spawnCustomer() {
-    customer.active = true;
+    customer.x = 750; customer.y = -100;
     customer.order = Math.floor(Math.random() * 3) + 1;
+    customer.state = 'ENTERING'; customer.hasPizza = false;
 }
 
 function toIso(x, y) { return { x: (x - y) * zoom, y: (x + y) * 0.5 * zoom }; }
@@ -48,15 +51,15 @@ const obstacles = [
     { x: 150, y: 150, w: 20, h: 450, z: 80, color: '#34495e', side: '#2c3e50', type: 'wall' }, 
     { x: 220, y: 180, w: 100, h: 60, z: 35, color: '#f5f6fa', side: '#dcdde1', label: 'MASSA', type: 'massa', icon: '🍞' },
     { x: 400, y: 180, w: 120, h: 60, z: 35, color: '#ecf0f1', side: '#bdc3c7', label: 'RECHEAR', type: 'recheio', icon: '🍅' },
-    { x: 220, y: 450, w: 100, h: 100, z: 50, color: '#e67e22', side: '#d35400', label: 'FORNO', type: 'forno', icon: '🔥' },
-    { x: 650, y: 250, w: 40, h: 200, z: 40, color: '#8d6e63', side: '#5d4037', label: 'ENTREGA', type: 'delivery', icon: '📦' }
+    { x: 200, y: 450, w: 100, h: 100, z: 50, color: '#e67e22', side: '#d35400', label: 'FORNO', type: 'forno', icon: '🔥' },
+    { x: 400, y: 450, w: 120, h: 60, z: 35, color: '#d35400', side: '#a04000', label: 'EMBALAR', type: 'embalar', icon: '📦' },
+    { x: 650, y: 250, w: 40, h: 200, z: 40, color: '#8d6e63', side: '#5d4037', label: 'ENTREGA', type: 'delivery', icon: '✅' }
 ];
 
 function drawIsoBox(x, y, w, h, z, color, sideColor, isZone = false) {
     let p1 = toIso(x, y); let p2 = toIso(x + w, y);
     let p3 = toIso(x + w, y + h); let p4 = toIso(x, y + h);
     let hz = z * zoom;
-
     if (isZone) {
         ctx.fillStyle = "rgba(46, 204, 113, 0.4)";
         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
@@ -81,29 +84,32 @@ function update() {
         if (player.x + 15 > o.x && player.x - 15 < o.x + o.w && ny + 15 > o.y && ny - 15 < o.y + o.h) canY = false;
     });
     if(canX) player.x = nx; if(canY) player.y = ny;
-
     camPos.x += (player.x - camPos.x) * 0.1; camPos.y += (player.y - camPos.y) * 0.1;
+
+    if(customer.state === 'ENTERING') { customer.y += 3; if(customer.y >= customer.targetY) customer.state = 'WAITING'; }
+    else if(customer.state === 'LEAVING') { customer.y += 4; if(customer.y > 1000) { customer.state = 'HIDDEN'; setTimeout(spawnCustomer, 2000); } }
 
     let inZone = false;
     obstacles.forEach(s => {
         if(!s.type || s.type === 'wall') return;
         let tx = s.x, ty = s.y, tw = s.w, th = s.h;
         if(s.type === 'delivery') { tx -= 45; tw = 45; }
-        else if(s.type === 'forno') { ty -= 45; th = 45; }
+        else if(s.type === 'forno' || s.type === 'embalar') { ty -= 45; th = 45; }
         else { ty += s.h; th = 45; }
 
         if(player.x > tx - 10 && player.x < tx + tw + 10 && player.y > ty - 10 && player.y < ty + th + 10) {
-            inZone = true; progress += 2.5;
+            inZone = true; progress += 3.5;
             document.getElementById('p-cont').style.display = 'block';
             document.getElementById('progressBar').style.width = progress + '%';
             if(progress >= 100) {
                 if(s.type === 'massa' && playerHand.length < 10) playerHand.push('massa');
                 if(s.type === 'recheio' && playerHand.includes('massa')) playerHand[playerHand.indexOf('massa')] = 'recheada';
                 if(s.type === 'forno' && playerHand.includes('recheada')) playerHand[playerHand.indexOf('recheada')] = 'assada';
-                if(s.type === 'delivery' && playerHand.includes('assada') && customer.active) { 
-                    playerHand.splice(playerHand.indexOf('assada'), 1);
-                    customer.order--; money += 3548;
-                    if(customer.order <= 0) { customer.active = false; setTimeout(spawnCustomer, 1500); }
+                if(s.type === 'embalar' && playerHand.includes('assada')) playerHand[playerHand.indexOf('assada')] = 'caixa';
+                if(s.type === 'delivery' && playerHand.includes('caixa') && customer.state === 'WAITING') { 
+                    playerHand.splice(playerHand.lastIndexOf('caixa'), 1);
+                    customer.order--; money += 4200;
+                    if(customer.order <= 0) { customer.state = 'LEAVING'; customer.hasPizza = true; }
                 }
                 progress = 0;
             }
@@ -120,13 +126,13 @@ function draw() {
     let cI = toIso(camPos.x, camPos.y);
     ctx.translate(canvas.width/2 - cI.x, canvas.height/2 - cI.y);
 
-    drawIsoBox(720, 0, 300, 1000, 2, "#34495e", "#2c3e50"); 
-    drawIsoBox(690, 0, 30, 1000, 5, "#7f8c8d", "#95a5a6"); 
+    drawIsoBox(720, -200, 300, 1400, 2, "#34495e", "#2c3e50"); 
+    drawIsoBox(690, -200, 30, 1400, 5, "#7f8c8d", "#95a5a6"); 
     drawIsoBox(150, 150, 540, 450, 5, "#2c3e50", "#1a252f");
 
     obstacles.forEach(s => {
         if(s.type === 'delivery') drawIsoBox(s.x - 40, s.y, 40, s.h, 0, "", "", true);
-        else if(s.type === 'forno') drawIsoBox(s.x, s.y - 40, s.w, 40, 0, "", "", true);
+        else if(s.type === 'forno' || s.type === 'embalar') drawIsoBox(s.x, s.y - 40, s.w, 40, 0, "", "", true);
         else if(s.type !== 'wall') drawIsoBox(s.x, s.y + s.h, s.w, 40, 0, "", "", true);
         drawIsoBox(s.x, s.y, s.w, s.h, s.z, s.color, s.side);
         if(s.label) {
@@ -136,43 +142,52 @@ function draw() {
         }
     });
 
-    if(customer.active) {
+    if(customer.state !== 'HIDDEN') {
         let custI = toIso(customer.x, customer.y);
-        drawIsoBox(customer.x-12, customer.y-12, 24, 24, 35, "#e74c3c", "#c0392b");
-        ctx.fillStyle = "#ffdbac"; ctx.beginPath(); ctx.arc(custI.x, custI.y - (45*zoom), 10*zoom, 0, Math.PI*2); ctx.fill();
-        let bx = custI.x + (50*zoom), by = custI.y - (80*zoom);
-        ctx.fillStyle = "white"; ctx.beginPath(); ctx.roundRect(bx - (30*zoom), by - (25*zoom), 60*zoom, 35*zoom, 8); ctx.fill();
-        ctx.fillStyle = "#333"; ctx.font = `bold ${16*zoom}px Arial`; ctx.fillText("🍕 x" + customer.order, bx + (2*zoom), by - (2*zoom));
+        let cBob = Math.sin(Date.now()/150) * 3;
+        drawIsoBox(customer.x-12, customer.y-12, 24, 24, 35 + cBob, "#e74c3c", "#c0392b");
+        ctx.fillStyle = "#ffdbac"; ctx.beginPath(); ctx.arc(custI.x, custI.y - (45*zoom) + (cBob*zoom), 10*zoom, 0, Math.PI*2); ctx.fill();
+        if(customer.state === 'WAITING') {
+            let bx = custI.x + (50*zoom), by = custI.y - (80*zoom);
+            ctx.fillStyle = "white"; ctx.beginPath(); ctx.roundRect(bx - (30*zoom), by - (25*zoom), 60*zoom, 35*zoom, 8); ctx.fill();
+            ctx.fillStyle = "#333"; ctx.font = `bold ${16*zoom}px Arial`; ctx.fillText("📦 x" + customer.order, bx + (2*zoom), by - (2*zoom));
+        }
+        if(customer.hasPizza) {
+            drawIsoBox(customer.x + 5, customer.y - 15, 30, 30, 8, "#d2b48c", "#8b4513");
+        }
     }
 
     let pI = toIso(player.x, player.y);
     walkCycle += (player.vx !== 0 || player.vy !== 0) ? 0.25 : 0;
     let bob = Math.sin(walkCycle) * 4;
+    
+    // CORPO DO JOGADOR
     drawIsoBox(player.x-10, player.y-10, 20, 20, 35 + bob, "#3498db", "#2980b9");
     ctx.fillStyle = "#ffdbac"; ctx.beginPath(); ctx.arc(pI.x, pI.y - (45*zoom) + (bob*zoom), 10*zoom, 0, Math.PI*2); ctx.fill();
     drawIsoBox(player.x-8, player.y-8, 16, 16, 60 + bob, "white", "#ddd");
 
-    // --- DESENHO DETALHADO DA PIZZA ---
+    // --- LÓGICA DE EMPILHAMENTO VERTICAL ---
+    let currentStackHeight = 65; // Começa na altura das mãos
     playerHand.forEach((h, i) => {
-        let py = pI.y - (65*zoom) - (i*6*zoom) + (bob*zoom);
-        let px = pI.x + (25*zoom);
-        
-        // Cor da borda da massa
-        ctx.fillStyle = h === 'assada' ? "#d35400" : "#f1c40f"; 
-        ctx.beginPath(); ctx.ellipse(px, py, 18*zoom, 9*zoom, 0, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.stroke();
+        let px = player.x + 15; // Posição fixa à frente do jogador
+        let py = player.y - 15;
+        let visualHeight = (currentStackHeight + bob) * zoom;
+        let isoStack = toIso(px, py);
 
-        // Círculo de recheio no meio
-        if (h === 'recheada' || h === 'assada') {
-            ctx.fillStyle = h === 'recheada' ? "#e74c3c" : "#f39c12"; // Vermelho molho ou Laranja queijo
-            ctx.beginPath(); ctx.ellipse(px, py, 13*zoom, 6*zoom, 0, 0, Math.PI*2); ctx.fill();
-            
-            // Detalhes extras (orégano/calabresa)
-            if(h === 'assada') {
-                ctx.fillStyle = "#c0392b";
-                ctx.beginPath(); ctx.arc(px - 5*zoom, py, 2*zoom, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(px + 4*zoom, py - 2*zoom, 2*zoom, 0, Math.PI*2); ctx.fill();
+        if (h === 'caixa') {
+            // Desenha a caixa na pilha
+            drawIsoBox(px, py, 30, 30, currentStackHeight + bob + 8, "#d2b48c", "#8b4513");
+            currentStackHeight += 10; // Sobe a pilha para a próxima caixa
+        } else {
+            // Desenha a pizza aberta na pilha
+            let drawY = isoStack.y - visualHeight;
+            ctx.fillStyle = h === 'assada' ? "#d35400" : "#f1c40f"; 
+            ctx.beginPath(); ctx.ellipse(isoStack.x, drawY, 18*zoom, 9*zoom, 0, 0, Math.PI*2); ctx.fill();
+            if (h === 'recheada' || h === 'assada') {
+                ctx.fillStyle = h === 'recheada' ? "#e74c3c" : "#f39c12";
+                ctx.beginPath(); ctx.ellipse(isoStack.x, drawY, 13*zoom, 6*zoom, 0, 0, Math.PI*2); ctx.fill();
             }
+            currentStackHeight += 5; // Sobe menos para pizzas abertas
         }
     });
 
@@ -180,6 +195,7 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
+// Joystick e Eventos
 let joyActive = false; let joyOrigin = { x: 0, y: 0 };
 const handleMove = (x, y) => {
     let dx = x - joyOrigin.x, dy = y - joyOrigin.y;
@@ -195,7 +211,7 @@ window.addEventListener('touchstart', e => { let t = e.touches[0]; joyActive = t
 window.addEventListener('touchmove', e => { if(joyActive) handleMove(e.touches[0].clientX, e.touches[0].clientY); });
 window.addEventListener('touchend', () => { joyActive = false; document.getElementById('joy-base').style.display='none'; player.vx=0; player.vy=0; });
 
-setInterval(update, 1000/60); draw();
+setInterval(update, 1000/60); spawnCustomer(); draw();
 </script>
 </body>
 </html>
